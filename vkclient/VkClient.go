@@ -1,11 +1,15 @@
 package vkclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 )
@@ -96,7 +100,10 @@ func (c *VkClient) CallMethod(method string, params map[string]string, token str
 	return vkResp, nil
 }
 
-func (c *VkClient) WallPost(params map[string]string) (VkResponse, string, error) {
+func (c *VkClient) WallPost(params map[string]string, message string) (VkResponse, string, error) {
+	escapedMessage := url.QueryEscape(message)
+	params["message"] = escapedMessage
+
 	resp, err := c.CallMethod("wall.post", params, c.Config.TokenFake)
 	if err != nil {
 		return VkResponse{}, "", err
@@ -110,12 +117,9 @@ func (c *VkClient) WallPost(params map[string]string) (VkResponse, string, error
 	return resp, postId, nil
 }
 
-func (c *VkClient) GetWallUploadServer() (VkResponse, error) {
-	params := map[string]string{"group_id": c.Config.GroupId}
-	return c.CallMethod("photos.getWallUploadServer", params, c.Config.TokenFake)
-}
-
-func (c *VkClient) WallCreateComment(params map[string]string) (VkResponse, error) {
+func (c *VkClient) WallCreateComment(params map[string]string, message string) (VkResponse, error) {
+	escapedMessage := url.QueryEscape(message)
+	params["message"] = escapedMessage
 	return c.CallMethod("wall.createComment", params, c.Config.TokenFake)
 }
 
@@ -123,4 +127,120 @@ func (c *VkClient) GroupsEditManager(params map[string]string) (VkResponse, erro
 	return c.CallMethod("groups.editManager", params, c.Config.Token)
 }
 
-//https:\/\/pu.vk.com\/c857608\/ss2170\/upload.php?act=do_add&mid=198653863&aid=-14&gid=224703507&hash=db77bea2d9af2df64cf49804b89e3b1d&rhash=f03e29eb8d6a1688c09ffc8da018c261&swfupload=1&api=1&wallphoto=1
+func (c *VkClient) GetWallUploadServer() (VkResponse, string, error) {
+	params := map[string]string{"group_id": c.Config.GroupId}
+	resp, err := c.CallMethod("photos.getWallUploadServer", params, c.Config.TokenFake)
+	if err != nil {
+		return VkResponse{}, "", err
+	}
+	// Приведение значения post_id к типу float64
+	uploadUrl := resp.Response.(map[string]interface{})["upload_url"].(string)
+
+	return resp, uploadUrl, nil
+}
+
+func UploadPhoto(filePath, uploadURL string) (map[string]interface{}, error) {
+
+	// Открываем файл
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("Ошибка открытия файла:", err)
+		return nil, err
+	}
+	defer file.Close()
+
+	// Создаем буфер для multipart/form-data
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Добавляем файл в multipart/form-data
+	part, err := writer.CreateFormFile("photo", file.Name())
+	if err != nil {
+		fmt.Println("Ошибка создания части multipart:", err)
+		return nil, err
+	}
+
+	// Копируем содержимое файла в part
+	_, err = io.Copy(part, file)
+	if err != nil {
+		fmt.Println("Ошибка копирования файла:", err)
+		return nil, err
+	}
+
+	// Завершаем создание multipart/form-data
+	err = writer.Close()
+	if err != nil {
+		fmt.Println("Ошибка закрытия multipart:", err)
+		return nil, err
+	}
+
+	// Формируем HTTP-запрос
+	request, err := http.NewRequest("POST", uploadURL, body)
+	if err != nil {
+		fmt.Println("Ошибка создания запроса:", err)
+		return nil, err
+	}
+
+	// Устанавливаем заголовок Content-Type
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Выполняем запрос
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		fmt.Println("Ошибка выполнения запроса:", err)
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	// Чтение ответа
+	respBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		fmt.Println("Ошибка чтения ответа:", err)
+		return nil, err
+	}
+
+	// Парсим ответ в карту
+	var result map[string]interface{}
+	err = json.Unmarshal(respBody, &result)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка разбора ответа: %w", err)
+	}
+
+	return result, nil
+}
+
+func (c *VkClient) PhotosSaveWallPhoto(postServerResp map[string]interface{}) (VkResponse, error) {
+
+	params := map[string]string{
+		"server":   strconv.FormatFloat(postServerResp["server"].(float64), 'f', -1, 64),
+		"hash":     postServerResp["hash"].(string),
+		"v":        "5.199",
+		"photo":    postServerResp["photo"].(string),
+		"group_id": c.Config.GroupId,
+	}
+	return c.CallMethod("photos.saveWallPhoto", params, c.Config.TokenFake)
+}
+
+func (c *VkClient) GetAttachments(filePath string) (string, error) {
+	resp, uploadUrl, err := c.GetWallUploadServer()
+	if err != nil {
+		fmt.Println(resp)
+		return "", nil
+	}
+
+	resps, err := UploadPhoto(filePath, uploadUrl)
+	if err != nil {
+		return "", nil
+	}
+
+	resp, err = c.PhotosSaveWallPhoto(resps)
+	if err != nil {
+		return "", nil
+	}
+
+	ownerId := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["owner_id"].(float64)), 10)
+	ID := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["id"].(float64)), 10)
+	att := fmt.Sprintf("photo%s_%s", ownerId, ID)
+	return att, nil
+}

@@ -3,23 +3,25 @@ package main
 import (
 	"VkBot/vkclient"
 	"fmt"
-	"net/url"
 )
 
 func main() {
-	commentText := "Больше фото тут 👉 https://t.me/+E-DuB-Axd6RhMmFh"
-	escapedComment := url.QueryEscape(commentText)
-	messageText := "Это рекламная запись, переходите по ссылке в комментариях"
-	escapedMessage := url.QueryEscape(messageText)
+
 	client, err := vkclient.NewVkClient()
 	if err != nil {
 		panic(err)
 	}
+	filePath := "C:/Users/s7far/GolandProjects/VkBot/sorces/a.jpg"
+	commentText := "Больше фото тут 👉 https://t.me/+E-DuB-Axd6RhMmFh"
+	messageText := "Это рекламная запись, переходите по ссылке в комментариях"
+	groupId := client.Config.GroupId
+	userId := client.Config.UserID
+	clientId := client.Config.ClientID
 
 	//Устанавливает пользователя редактором
 	paramsEditManager := map[string]string{
-		"group_id": client.Config.GroupId,
-		"user_id":  client.Config.UserID,
+		"group_id": groupId,
+		"user_id":  userId,
 		"role":     "editor",
 	}
 	resp, err := client.GroupsEditManager(paramsEditManager)
@@ -29,14 +31,17 @@ func main() {
 	}
 
 	//Оставляет запись на стене сообщества
+	att, err := client.GetAttachments(filePath)
+	if err != nil {
+		panic(err)
+	}
 	paramsWallPoast := map[string]string{
-		"owner_id":     client.Config.ClientID,
-		"from_group":   client.Config.GroupId,
-		"message":      escapedMessage,
-		"attachments":  "",
+		"owner_id":     clientId,
+		"from_group":   groupId,
+		"attachments":  att,
 		"publish_date": "",
 	}
-	resp, postID, err := client.WallPost(paramsWallPoast)
+	resp, postID, err := client.WallPost(paramsWallPoast, messageText)
 	if err != nil {
 		fmt.Println(resp)
 		panic(err)
@@ -45,13 +50,12 @@ func main() {
 	//пишет комментарий под постом от имени сообщества
 
 	paramsCreateComment := map[string]string{
-		"owner_id":   client.Config.ClientID,
+		"owner_id":   clientId,
 		"post_id":    postID,
-		"from_group": client.Config.GroupId,
-		"message":    escapedComment,
+		"from_group": groupId,
 	}
 
-	resp, err = client.WallCreateComment(paramsCreateComment)
+	resp, err = client.WallCreateComment(paramsCreateComment, commentText)
 	if err != nil {
 		fmt.Println(resp)
 		panic(err)
@@ -59,8 +63,8 @@ func main() {
 
 	//удаляет все роли у выбранного пользователя
 	paramsEditManager = map[string]string{
-		"group_id": client.Config.GroupId,
-		"user_id":  client.Config.UserID,
+		"group_id": groupId,
+		"user_id":  userId,
 		"role":     "",
 	}
 	resp, err = client.GroupsEditManager(paramsEditManager)
