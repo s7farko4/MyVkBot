@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 const defaultAPIVersion = "5.199" // Версия API ВК
@@ -21,7 +22,9 @@ type VkConfig struct {
 	GroupToken        string `json:"group_token"`
 	GroupTokenCosplay string `json:"group_token_cosplay"`
 	GroupIdCosplay    string `json:"group_id_cosplay"`
+	ClientIdCosplay   string `json:"client_id_cosplay"`
 	TokenFake         string `json:"token_fake"`
+	UserID            string `json:"user_id"`
 }
 
 type VkResponse struct {
@@ -63,7 +66,7 @@ func NewVkClient() (*VkClient, error) {
 	return &VkClient{Config: config}, nil
 }
 
-func (c *VkClient) CallMethod(method string, params map[string]string, token string) (*http.Response, error) {
+func (c *VkClient) CallMethod(method string, params map[string]string, token string) (VkResponse, error) {
 	url := fmt.Sprintf("%s/method/%s?access_token=%s&v=%s", c.Config.BaseURL, method, token, c.Config.Version)
 	for key, value := range params {
 		url += "&" + key + "=" + value
@@ -71,43 +74,52 @@ func (c *VkClient) CallMethod(method string, params map[string]string, token str
 	fmt.Println("URL: ", url, "\n")
 	response, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return VkResponse{}, err
 	}
 	defer response.Body.Close()
 
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return VkResponse{}, err
 	}
 
 	var vkResp VkResponse
 	err = json.Unmarshal(body, &vkResp)
 	if err != nil {
-		return nil, err
+		return VkResponse{}, err
 	}
 
 	if vkResp.Error != nil {
-		return nil, errors.New(fmt.Sprint(vkResp.Error))
+		return VkResponse{}, errors.New(fmt.Sprint(vkResp.Error))
 	}
 
-	return response, nil
+	return vkResp, nil
 }
 
-func (c *VkClient) WallPost(params map[string]string) (*http.Response, error) {
+func (c *VkClient) WallPost(params map[string]string) (VkResponse, string, error) {
+	resp, err := c.CallMethod("wall.post", params, c.Config.TokenFake)
+	if err != nil {
+		return VkResponse{}, "", err
+	}
+	// Приведение значения post_id к типу float64
+	postIdFloat := resp.Response.(map[string]interface{})["post_id"].(float64)
 
-	return c.CallMethod("wall.post", params, c.Config.GroupToken)
+	// Преобразование float64 в целое число и затем в строку
+	postId := strconv.FormatInt(int64(postIdFloat), 10)
+
+	return resp, postId, nil
 }
 
-func (c *VkClient) GetWallUploadServer() (*http.Response, error) {
+func (c *VkClient) GetWallUploadServer() (VkResponse, error) {
 	params := map[string]string{"group_id": c.Config.GroupId}
 	return c.CallMethod("photos.getWallUploadServer", params, c.Config.TokenFake)
 }
 
-func (c *VkClient) WallCreateComment(params map[string]string) (*http.Response, error) {
+func (c *VkClient) WallCreateComment(params map[string]string) (VkResponse, error) {
 	return c.CallMethod("wall.createComment", params, c.Config.TokenFake)
 }
 
-func (c *VkClient) GroupsEditManager(params map[string]string) (*http.Response, error) {
+func (c *VkClient) GroupsEditManager(params map[string]string) (VkResponse, error) {
 	return c.CallMethod("groups.editManager", params, c.Config.Token)
 }
 

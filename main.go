@@ -7,31 +7,19 @@ import (
 )
 
 func main() {
-	postID := "116104"
 	commentText := "Больше фото тут 👉 https://t.me/+E-DuB-Axd6RhMmFh"
+	escapedComment := url.QueryEscape(commentText)
+	messageText := "Это рекламная запись, переходите по ссылке в комментариях"
+	escapedMessage := url.QueryEscape(messageText)
 	client, err := vkclient.NewVkClient()
 	if err != nil {
 		panic(err)
 	}
-	/*
-		escapedMessage := url.QueryEscape(commentText)
 
-		params := map[string]string{
-			"owner_id":   client.Config.GroupId,
-			"post_id":    postID,
-			"from_group": "0",
-			"message":    escapedMessage,
-		}
-
-		resp, err := client.WallCreateComment(params)
-		if err != nil {
-			fmt.Println(resp)
-			panic(err)
-		}
-		fmt.Println(resp.Status)*/
+	//Устанавливает пользователя редактором
 	paramsEditManager := map[string]string{
-		"group_id": client.Config.GroupIdCosplay,
-		"user_id":  "19258661",
+		"group_id": client.Config.GroupId,
+		"user_id":  client.Config.UserID,
 		"role":     "editor",
 	}
 	resp, err := client.GroupsEditManager(paramsEditManager)
@@ -39,15 +27,28 @@ func main() {
 		fmt.Println(resp)
 		panic(err)
 	}
-	fmt.Println(resp.Status)
 
-	escapedMessage := url.QueryEscape(commentText)
+	//Оставляет запись на стене сообщества
+	paramsWallPoast := map[string]string{
+		"owner_id":     client.Config.ClientID,
+		"from_group":   client.Config.GroupId,
+		"message":      escapedMessage,
+		"attachments":  "",
+		"publish_date": "",
+	}
+	resp, postID, err := client.WallPost(paramsWallPoast)
+	if err != nil {
+		fmt.Println(resp)
+		panic(err)
+	}
+
+	//пишет комментарий под постом от имени сообщества
 
 	paramsCreateComment := map[string]string{
-		"owner_id":   "-159445401",
+		"owner_id":   client.Config.ClientID,
 		"post_id":    postID,
-		"from_group": "159445401",
-		"message":    escapedMessage,
+		"from_group": client.Config.GroupId,
+		"message":    escapedComment,
 	}
 
 	resp, err = client.WallCreateComment(paramsCreateComment)
@@ -55,11 +56,11 @@ func main() {
 		fmt.Println(resp)
 		panic(err)
 	}
-	fmt.Println(resp.Status)
 
+	//удаляет все роли у выбранного пользователя
 	paramsEditManager = map[string]string{
-		"group_id": client.Config.GroupIdCosplay,
-		"user_id":  "19258661",
+		"group_id": client.Config.GroupId,
+		"user_id":  client.Config.UserID,
 		"role":     "",
 	}
 	resp, err = client.GroupsEditManager(paramsEditManager)
@@ -67,5 +68,5 @@ func main() {
 		fmt.Println(resp)
 		panic(err)
 	}
-	fmt.Println(resp.Status)
+
 }
