@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 )
 
 const defaultAPIVersion = "5.199" // Версия API ВК
@@ -24,11 +25,13 @@ type VkConfig struct {
 	ClientID          string `json:"client_id"`
 	GroupId           string `json:"group_id"`
 	GroupToken        string `json:"group_token"`
+	TokenFake         string `json:"token_fake"`
+	UserID            string `json:"user_id"`
 	GroupTokenCosplay string `json:"group_token_cosplay"`
 	GroupIdCosplay    string `json:"group_id_cosplay"`
 	ClientIdCosplay   string `json:"client_id_cosplay"`
-	TokenFake         string `json:"token_fake"`
-	UserID            string `json:"user_id"`
+	TokenFakeCosplay  string `json:"token_fake_cosplay"`
+	UserIDCosplay     string `json:"user_id_cosplay"`
 }
 
 type VkResponse struct {
@@ -100,11 +103,11 @@ func (c *VkClient) CallMethod(method string, params map[string]string, token str
 	return vkResp, nil
 }
 
-func (c *VkClient) WallPost(params map[string]string, message string) (VkResponse, string, error) {
+func (c *VkClient) WallPost(params map[string]string, message string, token string) (VkResponse, string, error) {
 	escapedMessage := url.QueryEscape(message)
 	params["message"] = escapedMessage
 
-	resp, err := c.CallMethod("wall.post", params, c.Config.TokenFake)
+	resp, err := c.CallMethod("wall.post", params, token)
 	if err != nil {
 		return VkResponse{}, "", err
 	}
@@ -117,19 +120,19 @@ func (c *VkClient) WallPost(params map[string]string, message string) (VkRespons
 	return resp, postId, nil
 }
 
-func (c *VkClient) WallCreateComment(params map[string]string, message string) (VkResponse, error) {
+func (c *VkClient) WallCreateComment(params map[string]string, message string, token string) (VkResponse, error) {
 	escapedMessage := url.QueryEscape(message)
 	params["message"] = escapedMessage
-	return c.CallMethod("wall.createComment", params, c.Config.TokenFake)
+	return c.CallMethod("wall.createComment", params, token)
 }
 
-func (c *VkClient) GroupsEditManager(params map[string]string) (VkResponse, error) {
-	return c.CallMethod("groups.editManager", params, c.Config.Token)
+func (c *VkClient) GroupsEditManager(params map[string]string, token string) (VkResponse, error) {
+	return c.CallMethod("groups.editManager", params, token)
 }
 
-func (c *VkClient) GetWallUploadServer() (VkResponse, string, error) {
-	params := map[string]string{"group_id": c.Config.GroupId}
-	resp, err := c.CallMethod("photos.getWallUploadServer", params, c.Config.TokenFake)
+func (c *VkClient) GetWallUploadServer(groupID string, token string) (VkResponse, string, error) {
+	params := map[string]string{"group_id": groupID}
+	resp, err := c.CallMethod("photos.getWallUploadServer", params, token)
 	if err != nil {
 		return VkResponse{}, "", err
 	}
@@ -210,20 +213,20 @@ func UploadPhoto(filePath, uploadURL string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-func (c *VkClient) PhotosSaveWallPhoto(postServerResp map[string]interface{}) (VkResponse, error) {
+func (c *VkClient) PhotosSaveWallPhoto(postServerResp map[string]interface{}, token string, groupID string) (VkResponse, error) {
 
 	params := map[string]string{
 		"server":   strconv.FormatFloat(postServerResp["server"].(float64), 'f', -1, 64),
 		"hash":     postServerResp["hash"].(string),
 		"v":        "5.199",
 		"photo":    postServerResp["photo"].(string),
-		"group_id": c.Config.GroupId,
+		"group_id": groupID,
 	}
-	return c.CallMethod("photos.saveWallPhoto", params, c.Config.TokenFake)
+	return c.CallMethod("photos.saveWallPhoto", params, token)
 }
 
-func (c *VkClient) GetAttachments(filePaths ...string) (string, error) {
-	resp, uploadUrl, err := c.GetWallUploadServer()
+func (c *VkClient) GetAttachments(filePaths []string, params map[string]string) (string, error) {
+	resp, uploadUrl, err := c.GetWallUploadServer(params["groupId"], params["token"])
 	if err != nil {
 		fmt.Println(resp)
 		return "", nil
@@ -235,7 +238,7 @@ func (c *VkClient) GetAttachments(filePaths ...string) (string, error) {
 			return "", nil
 		}
 
-		resp, err = c.PhotosSaveWallPhoto(resps)
+		resp, err = c.PhotosSaveWallPhoto(resps, params["token"], params["groupId"])
 		if err != nil {
 			return "", nil
 		}
@@ -249,56 +252,67 @@ func (c *VkClient) GetAttachments(filePaths ...string) (string, error) {
 	return result, nil
 }
 
-func (c *VkClient) WallCloseComments(params map[string]string) (VkResponse, error) {
-	return c.CallMethod("wall.closeComments", params, c.Config.TokenFake)
+func (c *VkClient) WallCloseComments(params map[string]string, token string) (VkResponse, error) {
+	return c.CallMethod("wall.closeComments", params, token)
 }
 
-func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool) (VkResponse, error) {
+func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool, groupJoin bool) (VkResponse, error) {
 	fmt.Println(params)
+	//Вступает в группу
+	if groupJoin {
+		paramsGroupJoin := map[string]string{
+			"group_id": params["groupId"],
+		}
+		resp, err := c.GroupsJoin(paramsGroupJoin, params["token"])
+		if err != nil {
+			fmt.Println(resp)
+			return VkResponse{}, err
+		}
+	}
 	//Устанавливает пользователя редактором
 	if addEditor {
 		paramsEditManager := map[string]string{
-			"group_id": c.Config.GroupId,
-			"user_id":  c.Config.UserID,
+			"group_id": params["groupId"],
+			"user_id":  params["userID"],
 			"role":     "editor",
 		}
 
-		resp, err := c.GroupsEditManager(paramsEditManager)
+		resp, err := c.GroupsEditManager(paramsEditManager, params["ownerToken"])
 		if err != nil {
 			return resp, err
 		}
 	}
 
 	//Оставляет запись на стене сообщества
-	att, err := c.GetAttachments(filePaths...)
+	att, err := c.GetAttachments(filePaths, params)
 	if err != nil {
 		return VkResponse{}, err
 	}
 
 	paramsWallPost := map[string]string{
-		"owner_id":    c.Config.ClientID,
+		"owner_id":    params["clientID"],
 		"from_group":  "0",
 		"attachments": att,
 	}
 	if postFromGroup {
-		paramsWallPost["from_group"] = c.Config.GroupId
+		paramsWallPost["from_group"] = params["groupId"]
 	}
 
-	resp, postID, err := c.WallPost(paramsWallPost, params["messageText"])
+	resp, postID, err := c.WallPost(paramsWallPost, params["messageText"], params["token"])
 	if err != nil {
 		return resp, err
 	}
 
 	//пишет комментарий под постом от имени сообщества
 	paramsCreateComment := map[string]string{
-		"owner_id":   c.Config.ClientID,
+		"owner_id":   params["clientID"],
 		"post_id":    postID,
 		"from_group": "0",
 	}
 	if commentFromGroup {
-		paramsCreateComment["from_group"] = c.Config.GroupId
+		paramsCreateComment["from_group"] = params["groupId"]
 	}
-	resp, err = c.WallCreateComment(paramsCreateComment, params["commentText"])
+	resp, err = c.WallCreateComment(paramsCreateComment, params["commentText"], params["token"])
 	if err != nil {
 		return resp, err
 	}
@@ -306,12 +320,12 @@ func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, pos
 	if closeComment {
 		//Закрываем комментарии под постом
 		paramsCloseComments := map[string]string{
-			"owner_id": c.Config.ClientID,
+			"owner_id": params["clientID"],
 			"post_id":  postID,
 		}
 
 		fmt.Println("paramsCloseComments: ", paramsCloseComments)
-		resp, err = c.WallCloseComments(paramsCloseComments)
+		resp, err = c.WallCloseComments(paramsCloseComments, params["token"])
 		if err != nil {
 			return resp, err
 		}
@@ -320,15 +334,72 @@ func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, pos
 	//удаляет все роли у выбранного пользователя
 	if addEditor {
 		paramsEditManager := map[string]string{
-			"group_id": c.Config.GroupId,
-			"user_id":  c.Config.UserID,
+			"group_id": params["groupId"],
+			"user_id":  params["userID"],
 			"role":     "",
 		}
 
-		resp, err := c.GroupsEditManager(paramsEditManager)
+		resp, err := c.GroupsEditManager(paramsEditManager, params["ownerToken"])
 		if err != nil {
 			return resp, err
 		}
 	}
+	//входит из группы
+	if groupJoin {
+		paramsGroupLeave := map[string]string{
+			"group_id": params["groupId"],
+		}
+		resp, err := c.GroupsLeave(paramsGroupLeave, params["token"])
+		if err != nil {
+			fmt.Println(resp)
+			return VkResponse{}, err
+		}
+	}
 	return resp, nil
+}
+
+func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, imagePaths []string) (VkResponse, error) {
+
+	targetTime = targetTime.Add(-3 * time.Hour)
+
+	// Вычисляем разницу между текущим моментом и целевой датой
+	timeToWait := targetTime.Sub(time.Now())
+
+	timer := time.NewTimer(timeToWait)
+	fmt.Println("targetTime: ", targetTime)
+	fmt.Println("timeToWait: ", timeToWait)
+	fmt.Println("timer: ", timer)
+	fmt.Println("Не в го рутине")
+	// Создаем каналы для возврата результата и ошибки
+	resultChan := make(chan VkResponse)
+	errorChan := make(chan error)
+
+	go func() {
+		fmt.Println("В го рутине")
+		<-timer.C
+		fmt.Println("Таймер сработал")
+		resp, err := c.PostWithOpt(imagePaths, params, true, true, true, true, true)
+		if err != nil {
+			errorChan <- err
+		} else {
+			resultChan <- resp
+		}
+		close(resultChan)
+		close(errorChan)
+	}()
+
+	select {
+	case result := <-resultChan:
+		return result, nil
+	case err := <-errorChan:
+		return VkResponse{}, err
+	}
+}
+
+func (c *VkClient) GroupsJoin(params map[string]string, token string) (VkResponse, error) {
+	return c.CallMethod("groups.join", params, token)
+}
+
+func (c *VkClient) GroupsLeave(params map[string]string, token string) (VkResponse, error) {
+	return c.CallMethod("groups.leave", params, token)
 }
