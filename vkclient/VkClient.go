@@ -248,3 +248,87 @@ func (c *VkClient) GetAttachments(filePaths ...string) (string, error) {
 	result = result[0 : len(result)-1]
 	return result, nil
 }
+
+func (c *VkClient) WallCloseComments(params map[string]string) (VkResponse, error) {
+	return c.CallMethod("wall.closeComments", params, c.Config.TokenFake)
+}
+
+func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool) (VkResponse, error) {
+	fmt.Println(params)
+	//Устанавливает пользователя редактором
+	if addEditor {
+		paramsEditManager := map[string]string{
+			"group_id": c.Config.GroupId,
+			"user_id":  c.Config.UserID,
+			"role":     "editor",
+		}
+
+		resp, err := c.GroupsEditManager(paramsEditManager)
+		if err != nil {
+			return resp, err
+		}
+	}
+
+	//Оставляет запись на стене сообщества
+	att, err := c.GetAttachments(filePaths...)
+	if err != nil {
+		return VkResponse{}, err
+	}
+
+	paramsWallPost := map[string]string{
+		"owner_id":    c.Config.ClientID,
+		"from_group":  "0",
+		"attachments": att,
+	}
+	if postFromGroup {
+		paramsWallPost["from_group"] = c.Config.GroupId
+	}
+
+	resp, postID, err := c.WallPost(paramsWallPost, params["messageText"])
+	if err != nil {
+		return resp, err
+	}
+
+	//пишет комментарий под постом от имени сообщества
+	paramsCreateComment := map[string]string{
+		"owner_id":   c.Config.ClientID,
+		"post_id":    postID,
+		"from_group": "0",
+	}
+	if commentFromGroup {
+		paramsCreateComment["from_group"] = c.Config.GroupId
+	}
+	resp, err = c.WallCreateComment(paramsCreateComment, params["commentText"])
+	if err != nil {
+		return resp, err
+	}
+
+	if closeComment {
+		//Закрываем комментарии под постом
+		paramsCloseComments := map[string]string{
+			"owner_id": c.Config.ClientID,
+			"post_id":  postID,
+		}
+
+		fmt.Println("paramsCloseComments: ", paramsCloseComments)
+		resp, err = c.WallCloseComments(paramsCloseComments)
+		if err != nil {
+			return resp, err
+		}
+	}
+
+	//удаляет все роли у выбранного пользователя
+	if addEditor {
+		paramsEditManager := map[string]string{
+			"group_id": c.Config.GroupId,
+			"user_id":  c.Config.UserID,
+			"role":     "",
+		}
+
+		resp, err := c.GroupsEditManager(paramsEditManager)
+		if err != nil {
+			return resp, err
+		}
+	}
+	return resp, nil
+}
