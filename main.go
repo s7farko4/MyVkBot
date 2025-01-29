@@ -11,7 +11,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	filePath := "C:/Users/s7far/GolandProjects/VkBot/sorces/a.jpg"
+
+	imagePaths := make([]string, 2)
+	imagePaths[0] = "sorces/1.jpg"
+	imagePaths[1] = "sorces/2.jpg"
 	commentText := "Больше фото тут 👉 https://t.me/+E-DuB-Axd6RhMmFh"
 	messageText := "Это рекламная запись, переходите по ссылке в комментариях"
 	groupId := client.Config.GroupId
@@ -31,7 +34,7 @@ func main() {
 	}
 
 	//Оставляет запись на стене сообщества
-	att, err := client.GetAttachments(filePath)
+	att, err := client.GetAttachments(imagePaths...)
 	if err != nil {
 		panic(err)
 	}

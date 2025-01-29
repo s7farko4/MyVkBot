@@ -222,25 +222,29 @@ func (c *VkClient) PhotosSaveWallPhoto(postServerResp map[string]interface{}) (V
 	return c.CallMethod("photos.saveWallPhoto", params, c.Config.TokenFake)
 }
 
-func (c *VkClient) GetAttachments(filePath string) (string, error) {
+func (c *VkClient) GetAttachments(filePaths ...string) (string, error) {
 	resp, uploadUrl, err := c.GetWallUploadServer()
 	if err != nil {
 		fmt.Println(resp)
 		return "", nil
 	}
+	result := ""
+	for _, path := range filePaths {
+		resps, err := UploadPhoto(path, uploadUrl)
+		if err != nil {
+			return "", nil
+		}
 
-	resps, err := UploadPhoto(filePath, uploadUrl)
-	if err != nil {
-		return "", nil
+		resp, err = c.PhotosSaveWallPhoto(resps)
+		if err != nil {
+			return "", nil
+		}
+
+		ownerId := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["owner_id"].(float64)), 10)
+		ID := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["id"].(float64)), 10)
+		att := fmt.Sprintf("photo%s_%s,", ownerId, ID)
+		result += att
 	}
-
-	resp, err = c.PhotosSaveWallPhoto(resps)
-	if err != nil {
-		return "", nil
-	}
-
-	ownerId := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["owner_id"].(float64)), 10)
-	ID := strconv.FormatInt(int64(resp.Response.([]interface{})[0].(map[string]interface{})["id"].(float64)), 10)
-	att := fmt.Sprintf("photo%s_%s", ownerId, ID)
-	return att, nil
+	result = result[0 : len(result)-1]
+	return result, nil
 }
