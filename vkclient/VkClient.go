@@ -78,7 +78,7 @@ func (c *VkClient) CallMethod(method string, params map[string]string, token str
 	for key, value := range params {
 		url += "&" + key + "=" + value
 	}
-	fmt.Println("URL: ", url, "\n")
+	fmt.Println("URL  ", method, " :", url, "\n")
 	response, err := http.Get(url)
 	if err != nil {
 		return VkResponse{}, err
@@ -225,15 +225,114 @@ func (c *VkClient) PhotosSaveWallPhoto(postServerResp map[string]interface{}, to
 	return c.CallMethod("photos.saveWallPhoto", params, token)
 }
 
-func (c *VkClient) GetAttachments(filePaths []string, params map[string]string) (string, error) {
-	resp, uploadUrl, err := c.GetWallUploadServer(params["groupId"], params["token"])
+func (c *VkClient) VideoSave(token string) (VkResponse, string, error) {
+	params := map[string]string{}
+	resp, err := c.CallMethod("video.save", params, token)
+
+	if err != nil {
+		return VkResponse{}, "", err
+	}
+	uploadUrl := resp.Response.(map[string]interface{})["upload_url"].(string)
+
+	return resp, uploadUrl, err
+}
+
+func UploadVideo(filePath, uploadURL string) (map[string]interface{}, error) {
+
+	// Открываем файл
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("Ошибка открытия файла:", err)
+		return nil, err
+	}
+	defer file.Close()
+
+	// Создаем буфер для multipart/form-data
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Добавляем файл в multipart/form-data
+	part, err := writer.CreateFormFile("video", file.Name())
+	if err != nil {
+		fmt.Println("Ошибка создания части multipart:", err)
+		return nil, err
+	}
+
+	// Копируем содержимое файла в part
+	_, err = io.Copy(part, file)
+	if err != nil {
+		fmt.Println("Ошибка копирования файла:", err)
+		return nil, err
+	}
+
+	// Завершаем создание multipart/form-data
+	err = writer.Close()
+	if err != nil {
+		fmt.Println("Ошибка закрытия multipart:", err)
+		return nil, err
+	}
+
+	// Формируем HTTP-запрос
+	request, err := http.NewRequest("POST", uploadURL, body)
+	if err != nil {
+		fmt.Println("Ошибка создания запроса:", err)
+		return nil, err
+	}
+
+	// Устанавливаем заголовок Content-Type
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Выполняем запрос
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		fmt.Println("Ошибка выполнения запроса:", err)
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	// Чтение ответа
+	respBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		fmt.Println("Ошибка чтения ответа:", err)
+		return nil, err
+	}
+
+	// Парсим ответ в карту
+	var result map[string]interface{}
+	err = json.Unmarshal(respBody, &result)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка разбора ответа: %w", err)
+	}
+
+	return result, nil
+}
+
+func (c *VkClient) GetAttachments(filePathsPhoto, filePathsVideo []string, params map[string]string) (string, error) {
+	result := ""
+	resp, uploadUrlVideo, err := c.VideoSave(params["token"])
 	if err != nil {
 		fmt.Println(resp)
 		return "", nil
 	}
-	result := ""
-	for _, path := range filePaths {
-		resps, err := UploadPhoto(path, uploadUrl)
+	for _, path := range filePathsVideo {
+		resp, err := UploadVideo(path, uploadUrlVideo)
+		if err != nil {
+			return "", nil
+		}
+
+		ownerId := strconv.FormatInt(int64(resp["owner_id"].(float64)), 10)
+		ID := strconv.FormatInt(int64(resp["video_id"].(float64)), 10)
+		att := fmt.Sprintf("video%s_%s,", ownerId, ID)
+		result += att
+	}
+	resp, uploadUrlPhoto, err := c.GetWallUploadServer(params["groupId"], params["token"])
+	if err != nil {
+		fmt.Println(resp)
+		return "", nil
+	}
+	for _, path := range filePathsPhoto {
+		resps, err := UploadPhoto(path, uploadUrlPhoto)
 		if err != nil {
 			return "", nil
 		}
@@ -249,6 +348,7 @@ func (c *VkClient) GetAttachments(filePaths []string, params map[string]string) 
 		result += att
 	}
 	result = result[0 : len(result)-1]
+	fmt.Println(result)
 	return result, nil
 }
 
@@ -256,7 +356,7 @@ func (c *VkClient) WallCloseComments(params map[string]string, token string) (Vk
 	return c.CallMethod("wall.closeComments", params, token)
 }
 
-func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool, groupJoin bool) (VkResponse, error) {
+func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool, groupJoin bool, carousel bool) (VkResponse, error) {
 	fmt.Println(params)
 	//Вступает в группу
 	if groupJoin {
@@ -284,7 +384,7 @@ func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, pos
 	}
 
 	//Оставляет запись на стене сообщества
-	att, err := c.GetAttachments(filePaths, params)
+	att, err := c.GetAttachments(filePathsPhoto, filePathsVideo, params)
 	if err != nil {
 		return VkResponse{}, err
 	}
@@ -296,6 +396,9 @@ func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, pos
 	}
 	if postFromGroup {
 		paramsWallPost["from_group"] = params["groupId"]
+	}
+	if carousel {
+		paramsWallPost["primary_attachments_mode"] = "carousel"
 	}
 
 	resp, postID, err := c.WallPost(paramsWallPost, params["messageText"], params["token"])
@@ -358,7 +461,7 @@ func (c *VkClient) PostWithOpt(filePaths []string, params map[string]string, pos
 	return resp, nil
 }
 
-func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, imagePaths []string) (VkResponse, error) {
+func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, imagePaths, videoPaths []string) (VkResponse, error) {
 
 	targetTime = targetTime.Add(-3 * time.Hour)
 
@@ -378,7 +481,7 @@ func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, ima
 		fmt.Println("В го рутине")
 		<-timer.C
 		fmt.Println("Таймер сработал")
-		resp, err := c.PostWithOpt(imagePaths, params, true, true, true, true, true)
+		resp, err := c.PostWithOpt(imagePaths, videoPaths, params, true, true, true, true, true, true)
 		if err != nil {
 			errorChan <- err
 		} else {

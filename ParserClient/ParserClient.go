@@ -38,6 +38,7 @@ type Dir struct {
 	Links    []string
 	Tokens   []Token
 	Photos   []string
+	Videos   []string
 }
 
 type Token struct {
@@ -122,6 +123,8 @@ func (pc *ParserClient) ProcessDirectory(dirPath string) (Dir, error) {
 		switch {
 		case strings.HasSuffix(filename, ".jpg") || strings.HasSuffix(filename, ".png"):
 			dir.Photos = append(dir.Photos, "./sources/"+dir.DirName+"/"+filename)
+		case strings.HasSuffix(filename, ".mp4"):
+			dir.Videos = append(dir.Videos, "./sources/"+dir.DirName+"/"+filename)
 		case filename == "texts.txt":
 			data, err := pc.ReadTextFile(filepath)
 			if err != nil {
