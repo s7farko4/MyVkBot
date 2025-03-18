@@ -48,7 +48,6 @@ func main() {
 		select {}
 	*/
 
-	// Создание клиента VK
 	vkClient, err := vkclient.NewVkClient()
 	if err != nil {
 		log.Fatalf("Ошибка создания клиента VK: %v", err)

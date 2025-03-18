@@ -103,12 +103,12 @@ func (w *WorkerClient) WorkerToday(postsInfo []GoogleSheets.PostInfo, wg *sync.W
 			params := map[string]string{
 				"commentText": commentText,
 				"messageText": postInfoCopy.PostText,
-				"userID":      w.vkClient.Config.UserID,            //UserID
-				"groupToken":  w.vkClient.Config.GroupTokenCosplay, //GroupTokenCosplay
-				"clientID":    w.vkClient.Config.ClientIdCosplay,   //ClientIdCosplay
-				"groupId":     w.vkClient.Config.GroupIdCosplay,    //GroupIdCosplay
-				"token":       w.vkClient.Config.TokenFake,         //TokenFake
-				"ownerToken":  w.vkClient.Config.Token,             //Token
+				"userID":      w.vkClient.Config.UserID,     //UserID
+				"groupToken":  w.vkClient.Config.GroupToken, //GroupTokenCosplay
+				"clientID":    w.vkClient.Config.ClientID,   //ClientIdCosplay
+				"groupId":     w.vkClient.Config.GroupId,    //GroupIdCosplay
+				"token":       w.vkClient.Config.TokenFake,  //TokenFake
+				"ownerToken":  w.vkClient.Config.Token,      //Token
 			}
 
 			timer := createTimerToday(postInfoCopy)
@@ -198,15 +198,13 @@ func (w *WorkerClient) StartWorker() error {
 		return err
 	}
 
-	wg.Add(2)
+	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		w.WorkerToday(todayPostQueue, &wg)
 	}()
 
-	wg.Add(2)
+	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		w.WorkerYesterday(yesterdayPostQueue, &wg)
 	}()
 
