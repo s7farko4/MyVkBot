@@ -86,18 +86,16 @@ func createTimerYesterday(postInfo GoogleSheets.PostInfo) *time.Timer {
 }
 
 func (w *WorkerClient) WorkerToday(postsInfo []GoogleSheets.PostInfo, wg *sync.WaitGroup) {
-	defer wg.Done() // Убедимся, что wg.Done() вызывается при завершении функции
+	defer wg.Done()
 
 	var accessChannel = make(chan struct{}, 1)
 
-	// Запускаем горутины для каждой задачи
 	for _, postInfo := range postsInfo {
 		postInfoCopy := postInfo
 
-		// Увеличиваем счётчик WaitGroup перед запуском горутины
 		wg.Add(1)
 		go func(postInfo GoogleSheets.PostInfo) {
-			defer wg.Done() // Убедимся, что wg.Done() вызывается при завершении горутины
+			defer wg.Done()
 
 			destDir := "sources/post12"
 			link := postInfoCopy.TgLink
@@ -154,18 +152,16 @@ func (w *WorkerClient) WorkerToday(postsInfo []GoogleSheets.PostInfo, wg *sync.W
 }
 
 func (w *WorkerClient) WorkerYesterday(postsInfo []GoogleSheets.PostInfo, wg *sync.WaitGroup) {
-	defer wg.Done() // Убедимся, что wg.Done() вызывается при завершении функции
+	defer wg.Done()
 
 	var accessChannel = make(chan struct{}, 1)
 
-	// Запускаем горутины для каждой задачи
 	for _, postInfo := range postsInfo {
 		postInfoCopy := postInfo
 
-		// Увеличиваем счётчик WaitGroup перед запуском горутины
 		wg.Add(1)
 		go func(postInfo GoogleSheets.PostInfo) {
-			defer wg.Done() // Убедимся, что wg.Done() вызывается при завершении горутины
+			defer wg.Done()
 
 			timer := createTimerYesterday(postInfoCopy)
 			<-timer.C
@@ -196,28 +192,24 @@ func (w *WorkerClient) WorkerYesterday(postsInfo []GoogleSheets.PostInfo, wg *sy
 func (w *WorkerClient) StartWorker() error {
 	var wg sync.WaitGroup
 
-	// Получаем задачи из Google Sheets
 	todayPostQueue, yesterdayPostQueue, err := w.googleSheetsClient.CheckSheet()
 	if err != nil {
 		log.Fatal(err)
 		return err
 	}
 
-	// Запускаем WorkerToday
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		w.WorkerToday(todayPostQueue, &wg)
 	}()
 
-	// Запускаем WorkerYesterday
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		w.WorkerYesterday(yesterdayPostQueue, &wg)
 	}()
 
-	// Ждём завершения всех горутин
 	wg.Wait()
 	return nil
 }
