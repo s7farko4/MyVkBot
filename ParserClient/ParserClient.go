@@ -32,13 +32,11 @@ type Sources struct {
 
 // Dir представляет собой структуру для хранения информации о конкретной директории
 type Dir struct {
-	DirName  string
-	TimeList []time.Time
-	Texts    []string
-	Links    []string
-	Tokens   []Token
-	Photos   []string
-	Videos   []string
+	DirName string
+	Texts   []string
+	Links   []string
+	Photos  []string
+	Videos  []string
 }
 
 type Token struct {
@@ -125,30 +123,18 @@ func (pc *ParserClient) ProcessDirectory(dirPath string) (Dir, error) {
 			dir.Photos = append(dir.Photos, "./sources/"+dir.DirName+"/"+filename)
 		case strings.HasSuffix(filename, ".mp4"):
 			dir.Videos = append(dir.Videos, "./sources/"+dir.DirName+"/"+filename)
-		case filename == "texts.txt":
+		case filename == "text.txt":
 			data, err := pc.ReadTextFile(filepath)
 			if err != nil {
 				return Dir{}, err
 			}
 			dir.Texts = pc.ParseTexts(data)
-		case filename == "links.txt":
+		case filename == "link.txt":
 			data, err := pc.ReadTextFile(filepath)
 			if err != nil {
 				return Dir{}, err
 			}
 			dir.Links = pc.ParseLinks(data)
-		case filename == "Tokens.txt":
-			data, err := pc.ReadTextFile(filepath)
-			if err != nil {
-				return Dir{}, err
-			}
-			dir.Tokens = pc.ParseTokens(data)
-		case filename == "timeList.txt":
-			data, err := pc.ReadTextFile(filepath)
-			if err != nil {
-				return Dir{}, err
-			}
-			dir.TimeList = pc.ParseTimeList(data)
 		default:
 			continue
 		}

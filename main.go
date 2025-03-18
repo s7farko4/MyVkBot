@@ -1,59 +1,68 @@
 package main
 
 import (
-	parserclient "VkBot/ParserClient"
+	"VkBot/GoogleSheets"
+	"VkBot/WorkerClient"
 	"VkBot/vkclient"
-	"fmt"
-	_ "github.com/mattn/go-sqlite3" // Драйвер для SQLite
+	_ "github.com/mattn/go-sqlite3"
 	"log"
-	"time"
 )
 
 func main() {
-	pClient := parserclient.NewParserClient()
-	sources, err := pClient.ParsSources()
-	if err != nil {
-		log.Fatalf("Ошибка при обработке источников: %v", err)
-	}
-	fmt.Println(sources)
-
-	client, err := vkclient.NewVkClient()
-	if err != nil {
-		panic(err)
-	}
-	commentText := "Больше фото тут 👉 https://t.me/+_CKpLbxW5QtkMzky"
-	messageText := "🍭 Mилaшечка пoдписчицa cкинула свoи фoтки на oцeнкy 🥵 Её кaнaльчик в кoммeнтаpиях 😳"
-
-	params := map[string]string{
-		"commentText": commentText,
-		"messageText": messageText,
-		"userID":      client.Config.UserID,
-		"groupToken":  client.Config.GroupToken,
-		"clientID":    client.Config.ClientID,
-		"groupId":     client.Config.GroupId,
-		"token":       client.Config.TokenFake,
-		"ownerToken":  client.Config.Token,
-		//"primary_attachments_mode": "",
-	}
-	// Устанавливаем конкретную дату и время
-	targetTime := time.Date(2025, 1, 30, 22, 00, 00, 000, time.UTC)
-
-	resp, err := client.TimerPost(targetTime, params, sources.Dirs[0].Photos, sources.Dirs[0].Videos)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(resp)
-	select {}
 	/*
-		resp, uploadUrl, err := client.VideoSave(params["token"])
+		pClient := parserclient.NewParserClient()
+		sources, err := pClient.ParsSources()
+		if err != nil {
+			log.Fatalf("Ошибка при обработке источников: %v", err)
+		}
+		fmt.Println(sources.Dirs[0])
+
+		client, err := vkclient.NewVkClient()
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(resp)
-		fmt.Println(uploadUrl)
 
-		res, err := vkclient.UploadVideo("sources/Beautiful Cosplay/1.mp4", uploadUrl)
-		fmt.Println(int64((res["video_id"]).(float64)))
+		link := "https://t.me/+r5P_voWHdEZkOTFh"
+		commentText := "👇Фотки тут👇\n\n" + link + "\n\n" + link + "\n\n👆Нажимай👆"
+		messageText := "Очень горячий фотосет получился❤\nСамое горячее в комментариях👇"
+		params := map[string]string{
+			"commentText": commentText,
+			"messageText": messageText,
+			"userID":      client.Config.UserID,            //UserID
+			"groupToken":  client.Config.GroupTokenCosplay, //GroupTokenCosplay
+			"clientID":    client.Config.ClientIdCosplay,   //ClientIdCosplay
+			"groupId":     client.Config.GroupIdCosplay,    //GroupIdCosplay
+			"token":       client.Config.TokenFake,         //TokenFake
+			"ownerToken":  client.Config.Token,             //Token
+			//"primary_attachments_mode": "",
+		}
+		targetTimePost1 := time.Date(2025, 3, 16, 22, 00, 00, 000, time.UTC)
+
+		resp, err := client.TimerPost(targetTimePost1, params, sources.Dirs[0].Photos, sources.Dirs[0].Videos)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(resp.PostID)
+		fmt.Println(resp.PostLink)
+
+		select {}
 	*/
+
+	// Создание клиента VK
+	vkClient, err := vkclient.NewVkClient()
+	if err != nil {
+		log.Fatalf("Ошибка создания клиента VK: %v", err)
+	}
+	googleSheetsClient, err := GoogleSheets.NewClient()
+	if err != nil {
+		panic(err)
+	}
+	worker := WorkerClient.NewWorker(*vkClient, *googleSheetsClient)
+
+	err = worker.StartWorker()
+	if err != nil {
+		panic(err)
+	}
+	select {}
 
 }

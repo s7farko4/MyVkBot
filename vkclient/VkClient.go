@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -36,7 +37,9 @@ type VkConfig struct {
 
 type VkResponse struct {
 	Response interface{} `json:"response"`
-	Error    *VkError    `json:"error,omitempty"`
+	PostID   string
+	PostLink string
+	Error    *VkError `json:"error,omitempty"`
 }
 type VkError struct {
 	ErrorCode int    `json:"error_code"`
@@ -103,27 +106,58 @@ func (c *VkClient) CallMethod(method string, params map[string]string, token str
 	return vkResp, nil
 }
 
-func (c *VkClient) WallPost(params map[string]string, message string, token string) (VkResponse, string, error) {
+func (c *VkClient) WallPost(params map[string]string, message string, token string) (VkResponse, string, string, error) {
 	escapedMessage := url.QueryEscape(message)
 	params["message"] = escapedMessage
 
 	resp, err := c.CallMethod("wall.post", params, token)
 	if err != nil {
-		return VkResponse{}, "", err
+		return VkResponse{}, "", "", err
 	}
 	// Приведение значения post_id к типу float64
 	postIdFloat := resp.Response.(map[string]interface{})["post_id"].(float64)
 
 	// Преобразование float64 в целое число и затем в строку
 	postId := strconv.FormatInt(int64(postIdFloat), 10)
+	fmt.Println("________________________________________________")
+	fmt.Println(resp.Response.(map[string]interface{}))
+	fmt.Println("________________________________________________")
+	link := "https://vk.com/wall" + params["owner_id"] + "_" + postId
 
-	return resp, postId, nil
+	return resp, postId, link, nil
 }
 
 func (c *VkClient) WallCreateComment(params map[string]string, message string, token string) (VkResponse, error) {
 	escapedMessage := url.QueryEscape(message)
 	params["message"] = escapedMessage
 	return c.CallMethod("wall.createComment", params, token)
+}
+
+func (c *VkClient) GetById(id string, token string) (int, error) {
+	params := make(map[string]string)
+	params["posts"] = id
+	resp, err := c.CallMethod("wall.getById", params, token)
+	if err != nil {
+		return -1, err
+	}
+
+	responseArray := resp.Response.([]interface{})
+
+	if len(responseArray) > 0 {
+		firstItem := responseArray[0].(map[string]interface{}) // Преобразование интерфейса в map[string]interface{}
+		views, ok := firstItem["views"].(map[string]interface{})
+		if !ok {
+			log.Fatalf("Не удалось найти поле 'views' в первом элементе.")
+		}
+		count, ok := views["count"].(float64)
+		if !ok {
+			log.Fatalf("Не удалось найти поле 'count' в 'views'.")
+		}
+		return int(count), nil
+	} else {
+		log.Fatal("Массив response пуст.")
+		return -1, err
+	}
 }
 
 func (c *VkClient) GroupsEditManager(params map[string]string, token string) (VkResponse, error) {
@@ -310,7 +344,7 @@ func UploadVideo(filePath, uploadURL string) (map[string]interface{}, error) {
 
 func (c *VkClient) GetAttachments(filePathsPhoto, filePathsVideo []string, params map[string]string) (string, error) {
 	result := ""
-	resp, uploadUrlVideo, err := c.VideoSave(params["token"])
+	resp, uploadUrlVideo, err := c.VideoSave(params["ownerToken"])
 	if err != nil {
 		fmt.Println(resp)
 		return "", nil
@@ -326,7 +360,7 @@ func (c *VkClient) GetAttachments(filePathsPhoto, filePathsVideo []string, param
 		att := fmt.Sprintf("video%s_%s,", ownerId, ID)
 		result += att
 	}
-	resp, uploadUrlPhoto, err := c.GetWallUploadServer(params["groupId"], params["token"])
+	resp, uploadUrlPhoto, err := c.GetWallUploadServer(params["groupId"], params["ownerToken"])
 	if err != nil {
 		fmt.Println(resp)
 		return "", nil
@@ -337,7 +371,7 @@ func (c *VkClient) GetAttachments(filePathsPhoto, filePathsVideo []string, param
 			return "", nil
 		}
 
-		resp, err = c.PhotosSaveWallPhoto(resps, params["token"], params["groupId"])
+		resp, err = c.PhotosSaveWallPhoto(resps, params["ownerToken"], params["groupId"])
 		if err != nil {
 			return "", nil
 		}
@@ -358,6 +392,7 @@ func (c *VkClient) WallCloseComments(params map[string]string, token string) (Vk
 
 func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params map[string]string, postFromGroup bool, commentFromGroup bool, addEditor bool, closeComment bool, groupJoin bool, carousel bool) (VkResponse, error) {
 	fmt.Println(params)
+
 	//Вступает в группу
 	if groupJoin {
 		paramsGroupJoin := map[string]string{
@@ -377,7 +412,7 @@ func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params m
 			"role":     "editor",
 		}
 
-		resp, err := c.GroupsEditManager(paramsEditManager, params["ownerToken"])
+		resp, err := c.GroupsEditManager(paramsEditManager, params["token"])
 		if err != nil {
 			return resp, err
 		}
@@ -401,7 +436,7 @@ func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params m
 		paramsWallPost["primary_attachments_mode"] = "carousel"
 	}
 
-	resp, postID, err := c.WallPost(paramsWallPost, params["messageText"], params["token"])
+	resp, postID, link, err := c.WallPost(paramsWallPost, params["messageText"], params["ownerToken"])
 	if err != nil {
 		return resp, err
 	}
@@ -428,7 +463,7 @@ func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params m
 		}
 
 		fmt.Println("paramsCloseComments: ", paramsCloseComments)
-		resp, err = c.WallCloseComments(paramsCloseComments, params["token"])
+		resp, err = c.WallCloseComments(paramsCloseComments, params["ownerToken"])
 		if err != nil {
 			return resp, err
 		}
@@ -458,10 +493,12 @@ func (c *VkClient) PostWithOpt(filePathsPhoto, filePathsVideo []string, params m
 			return VkResponse{}, err
 		}
 	}
+	resp.PostLink = link
+	resp.PostID = postID
 	return resp, nil
 }
 
-func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, imagePaths, videoPaths []string) (VkResponse, error) {
+func (c *VkClient) TimerPostByMe(targetTime time.Time, params map[string]string, imagePaths, videoPaths []string) (VkResponse, error) {
 
 	targetTime = targetTime.Add(-3 * time.Hour)
 
@@ -472,16 +509,14 @@ func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, ima
 	fmt.Println("targetTime: ", targetTime)
 	fmt.Println("timeToWait: ", timeToWait)
 	fmt.Println("timer: ", timer)
-	fmt.Println("Не в го рутине")
 	// Создаем каналы для возврата результата и ошибки
 	resultChan := make(chan VkResponse)
 	errorChan := make(chan error)
 
 	go func() {
-		fmt.Println("В го рутине")
 		<-timer.C
 		fmt.Println("Таймер сработал")
-		resp, err := c.PostWithOpt(imagePaths, videoPaths, params, true, true, true, true, true, true)
+		resp, err := c.PostWithOptByMe(imagePaths, videoPaths, params, true, false)
 		if err != nil {
 			errorChan <- err
 		} else {
@@ -505,4 +540,96 @@ func (c *VkClient) GroupsJoin(params map[string]string, token string) (VkRespons
 
 func (c *VkClient) GroupsLeave(params map[string]string, token string) (VkResponse, error) {
 	return c.CallMethod("groups.leave", params, token)
+}
+
+func (c *VkClient) TimerPost(targetTime time.Time, params map[string]string, imagePaths, videoPaths []string) (VkResponse, error) {
+
+	targetTime = targetTime.Add(-3 * time.Hour)
+
+	// Вычисляем разницу между текущим моментом и целевой датой
+	timeToWait := targetTime.Sub(time.Now())
+
+	timer := time.NewTimer(timeToWait)
+	fmt.Println("targetTime: ", targetTime)
+	fmt.Println("timeToWait: ", timeToWait)
+	fmt.Println("timer: ", timer)
+	// Создаем каналы для возврата результата и ошибки
+	resultChan := make(chan VkResponse)
+	errorChan := make(chan error)
+
+	go func() {
+		<-timer.C
+		fmt.Println("Таймер сработал")
+		resp, err := c.PostWithOpt(imagePaths, videoPaths, params, true, false, false, true, false, false)
+		fmt.Println(resp)
+		if err != nil {
+			errorChan <- err
+		} else {
+			resultChan <- resp
+		}
+		close(resultChan)
+		close(errorChan)
+	}()
+
+	select {
+	case result := <-resultChan:
+		return result, nil
+	case err := <-errorChan:
+		return VkResponse{}, err
+	}
+}
+
+func (c *VkClient) PostWithOptByMe(filePathsPhoto, filePathsVideo []string, params map[string]string, closeComment bool, carousel bool) (VkResponse, error) {
+	fmt.Println(params)
+
+	//Оставляет запись на стене сообщества
+	att, err := c.GetAttachments(filePathsPhoto, filePathsVideo, params)
+	if err != nil {
+		return VkResponse{}, err
+	}
+
+	paramsWallPost := map[string]string{
+		"owner_id":    params["clientID"],
+		"from_group":  params["groupId"],
+		"attachments": att,
+	}
+
+	if carousel {
+		paramsWallPost["primary_attachments_mode"] = "carousel"
+	}
+
+	resp, postID, link, err := c.WallPost(paramsWallPost, params["messageText"], params["ownerToken"])
+	if err != nil {
+		return resp, err
+	}
+
+	//пишет комментарий под постом от имени сообщества
+	paramsCreateComment := map[string]string{
+		"owner_id":   params["clientID"],
+		"post_id":    postID,
+		"from_group": "0",
+	}
+
+	resp, err = c.WallCreateComment(paramsCreateComment, params["commentText"], params["token"])
+	if err != nil {
+		return resp, err
+	}
+
+	if closeComment {
+		//Закрываем комментарии под постом
+		paramsCloseComments := map[string]string{
+			"owner_id": params["clientID"],
+			"post_id":  postID,
+		}
+
+		fmt.Println("paramsCloseComments: ", paramsCloseComments)
+		resp, err = c.WallCloseComments(paramsCloseComments, params["ownerToken"])
+		if err != nil {
+			return resp, err
+		}
+	}
+	resp.PostID = postID
+	resp.PostLink = link
+
+	return resp, nil
 }
